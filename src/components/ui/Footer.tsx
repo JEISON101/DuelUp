@@ -68,7 +68,7 @@ export function Footer() {
         </div>
 
         <p className='border-t border-white/[0.09] pt-4 text-center text-xs text-white-muted'>
-          © {year} DuelUP. Hecho por Tu Nombre. Todos los derechos reservados.
+          © {year} DuelUP. Hecho por Jeison Reyes. Todos los derechos reservados.
         </p>
       </div>
     </footer>
