@@ -55,7 +55,7 @@ const Register = () => {
   }
 
   return (
-    <div className='flex min-h-screen items-center justify-center bg-midnight px-4'>
+    <div className='flex min-h-screen items-center justify-center bg-page px-4'>
       <AuthCard title='Crea tu cuenta' subtitle='Únete a DuelUP y empieza a jugar.'>
         <RegisterForm
           onSubmit={handleSubmit}

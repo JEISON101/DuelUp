@@ -12,7 +12,7 @@ import Register from './pages/Register'
 
 function App() {
   return (
-    <div className='min-h-screen w-full bg-midnight'>
+    <div className='min-h-screen w-full bg-page'>
       <BrowserRouter>
         <Routes>
           <Route element={<PublicRoute />}>

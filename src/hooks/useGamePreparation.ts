@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { supabase } from '../lib/supabase'
-import { getGameRoom, initializeGame, selectGameCard, submitGameAnswer } from '../services/games'
+import { expireGameSelection, getGameRoom, initializeGame, selectGameCard, submitGameAnswer } from '../services/games'
 
 export function useGamePreparation(gameId: string | undefined, userId: string | undefined) {
   const queryClient = useQueryClient()
@@ -74,6 +74,10 @@ export function useGamePreparation(gameId: string | undefined, userId: string | 
       submitGameAnswer(gameId!, gameQuestionId, answerId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: roomQueryKey }),
   })
+  const selectionTimeoutMutation = useMutation({
+    mutationFn: () => expireGameSelection(gameId!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomQueryKey }),
+  })
 
   return {
     ...roomQuery,
@@ -94,5 +98,6 @@ export function useGamePreparation(gameId: string | undefined, userId: string | 
     selectionError: selectionMutation.error,
     submitAnswer: answerMutation.mutateAsync,
     submittingAnswer: answerMutation.isPending,
+    expireSelection: selectionTimeoutMutation.mutateAsync,
   }
 }

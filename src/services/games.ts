@@ -38,6 +38,7 @@ export type GameRoom = {
   id: string
   status: string
   startedAt: string | null
+  selectionStartedAt: string | null
   currentTurnId: string | null
   currentGameQuestionId: string | null
   winnerId: string | null
@@ -48,6 +49,7 @@ export type GameRoom = {
     position: number
     selectedBy: string | null
     selectedAt: string | null
+    answeredAt: string | null
   }>
   selectedQuestion: {
     gameQuestionId: string
@@ -74,6 +76,16 @@ export async function selectGameCard(gameId: string, gameQuestionId: string) {
   const { error } = await supabase.rpc('select_game_card', {
     p_game_id: gameId,
     p_game_question_id: gameQuestionId,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function expireGameSelection(gameId: string) {
+  const { error } = await supabase.rpc('expire_game_selection', {
+    p_game_id: gameId,
   })
 
   if (error) {
@@ -122,7 +134,7 @@ export async function getGameRoom(gameId: string, userId: string): Promise<GameR
   ] = await Promise.all([
     supabase
       .from('game_questions')
-      .select('id, position, selected_by, selected_at')
+      .select('id, position, selected_by, selected_at, answered_at')
       .eq('game_id', gameId)
       .order('position'),
     supabase
@@ -158,7 +170,7 @@ export async function getGameRoom(gameId: string, userId: string): Promise<GameR
   }
 
   let selectedQuestion: GameRoom['selectedQuestion'] = null
-  if (game.current_game_question_id) {
+  if (game.status === 'activo' && game.current_game_question_id) {
     const { data, error } = await supabase.rpc('get_selected_game_question', {
       p_game_id: gameId,
     })
@@ -220,7 +232,13 @@ export async function getGameRoom(gameId: string, userId: string): Promise<GameR
       position: assignment.position,
       selectedBy: assignment.selected_by,
       selectedAt: assignment.selected_at,
+      answeredAt: assignment.answered_at,
     })),
+    selectionStartedAt: game.current_game_question_id
+      ? null
+      : assignments.find((assignment) =>
+          assignment.selected_by === null && assignment.answered_at === null && assignment.selected_at !== null,
+        )?.selected_at ?? null,
     selectedQuestion,
     answers: (gameAnswers ?? []) as GameAnswer[],
   }

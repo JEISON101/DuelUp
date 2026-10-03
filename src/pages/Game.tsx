@@ -26,7 +26,7 @@ function getNormalScores(game: GameRoom) {
     return {
       player,
       correct: playerAnswers.filter((answer) => answer.is_correct).length,
-      incorrect: playerAnswers.filter((answer) => answer.answer_id !== null && !answer.is_correct).length,
+      incorrect: playerAnswers.filter((answer) => !answer.is_correct).length,
       unanswered: playerAnswers.filter((answer) => answer.answer_id === null).length,
     }
   })
@@ -41,33 +41,47 @@ const Game = () => {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const timeoutAttempts = useRef(new Set<string>())
   const activeQuestion: GameRoom['selectedQuestion'] | undefined = gameQuery.data?.selectedQuestion
+  const selectionStartedAt = gameQuery.data?.selectionStartedAt
 
   useEffect(() => {
-    if (!activeQuestion || !id) {
+    if (!id) {
       setRemainingSeconds(null)
       return
     }
 
-    const roundKey = `${id}:${activeQuestion.gameQuestionId}:${activeQuestion.selectedAt}`
-    const durationMs = activeQuestion.selectedBy === null ? 10_000 : 30_000
-    const deadline = Date.parse(activeQuestion.selectedAt) + durationMs
+    const isSelecting = !activeQuestion && Boolean(selectionStartedAt)
+    const startedAt = activeQuestion?.selectedAt ?? selectionStartedAt
+    if (!startedAt) {
+      setRemainingSeconds(null)
+      return
+    }
+
+    const roundKey = isSelecting
+      ? `${id}:selection:${startedAt}`
+      : `${id}:answer:${activeQuestion!.gameQuestionId}:${startedAt}`
+    const durationMs = isSelecting ? 10_000 : activeQuestion?.selectedBy === null ? 10_000 : 30_000
+    const deadline = Date.parse(startedAt) + durationMs
     const updateTimer = () => {
       const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemainingSeconds(secondsLeft)
       if (secondsLeft === 0 && !timeoutAttempts.current.has(roundKey)) {
         timeoutAttempts.current.add(roundKey)
-        void gameQuery.submitAnswer({ gameQuestionId: activeQuestion.gameQuestionId, answerId: null }).catch(() => {})
+        if (isSelecting) {
+          void gameQuery.expireSelection().catch(() => {})
+        } else if (activeQuestion) {
+          void gameQuery.submitAnswer({ gameQuestionId: activeQuestion.gameQuestionId, answerId: null }).catch(() => {})
+        }
       }
     }
 
     updateTimer()
     const interval = window.setInterval(updateTimer, 250)
     return () => window.clearInterval(interval)
-  }, [activeQuestion, gameQuery.submitAnswer, id])
+  }, [activeQuestion, gameQuery.expireSelection, gameQuery.submitAnswer, id, selectionStartedAt])
 
   if (gameQuery.isLoading) {
     return (
-      <main className='flex min-h-screen items-center justify-center bg-midnight px-4 text-white'>
+      <main className='flex min-h-screen items-center justify-center bg-page px-4 text-white'>
         <Spinner size='lg' label='Preparando la partida...' />
       </main>
     )
@@ -75,7 +89,7 @@ const Game = () => {
 
   if (gameQuery.isError || !gameQuery.data) {
     return (
-      <main className='flex min-h-screen items-center justify-center bg-midnight px-4 py-8 text-white'>
+      <main className='flex min-h-screen items-center justify-center bg-page px-4 py-8 text-white'>
         <Card className='w-full max-w-lg space-y-5'>
           <div>
             <p className='text-sm uppercase text-purple'>DuelUP</p>
@@ -104,6 +118,7 @@ const Game = () => {
   }
 
   const game = gameQuery.data
+  const normalScores = getNormalScores(game)
   if (game.status === 'finalizado') {
     const scores = getNormalScores(game)
     const winner = [game.playerOne, game.playerTwo].find((player) => player.id === game.winnerId)
@@ -128,15 +143,14 @@ const Game = () => {
           </section>
           {game.answers.length > 6 ? <p className='text-center text-sm text-white-muted'>El duelo incluyó desempate.</p> : null}
           <div className='flex flex-wrap justify-center gap-3'>
-            <Button leftIcon={<Home size={16} />} onClick={() => navigate('/app/home')}>Volver a Home</Button>
-            <Button variant='ghost' leftIcon={<Swords size={16} />} onClick={() => navigate('/app/home')}>Retar a otro jugador</Button>
+            <Button variant='ghost' leftIcon={<Home size={16} />} onClick={() => navigate('/app/home')}>Volver a Home</Button>
           </div>
         </div>
       </main>
     )
   }
 
-  //const currentPlayer = [game.playerOne, game.playerTwo].find((player) => player.id === game.currentTurnId)
+  const currentPlayer = [game.playerOne, game.playerTwo].find((player) => player.id === game.currentTurnId)
   const isMyTurn = game.currentTurnId === user?.id
   const hasRevealedCard = game.currentGameQuestionId !== null
   const canSelectCard = game.status === 'activo' && isMyTurn && !hasRevealedCard
@@ -196,10 +210,11 @@ const Game = () => {
           </Button>
         </header>
 
-        <section className='game-scorebar flex-col cols-2 sm:cols-1 mb-7' aria-label='Estado de la partida'>
+        <section className='game-scorebar mb-7' aria-label='Estado de la partida'>
           {[game.playerOne, game.playerTwo].map((player, index) => {
             const isCurrentPlayer = player.id === game.currentTurnId
             const playerName = player.username || `Jugador ${index + 1}`
+            const playerScore = normalScores.find((score) => score.player.id === player.id)
 
             return (
               <div key={player.id} className={`game-player ${isCurrentPlayer ? 'game-player-active' : ''}`}>
@@ -211,11 +226,28 @@ const Game = () => {
                 <div className='min-w-0'>
                   <p className='truncate font-semibold'>{playerName}</p>
                   <p className='game-player-label'>{isCurrentPlayer ? 'Turno actual' : 'En la mesa'}</p>
+                  <p className='game-player-score' aria-label={`${playerScore?.correct ?? 0} correctas, ${playerScore?.incorrect ?? 0} incorrectas`}>
+                    <span className='game-player-correct'><Check size={13} /> {playerScore?.correct ?? 0}</span>
+                    <span className='game-player-incorrect'><X size={13} /> {playerScore?.incorrect ?? 0}</span>
+                  </p>
                 </div>
                 {isCurrentPlayer ? <span className='game-turn-dot' aria-label='Tiene el turno' /> : null}
               </div>
             )
           })}
+          <div className='game-turn-status' role='status'>
+            <span className='game-status-icon'><Clock3 size={16} /></span>
+            <div>
+              <p className='game-status-label'>
+                {hasRevealedCard ? (canRespond ? 'Tu respuesta' : 'Respondiendo') : isMyTurn ? 'Tu turno para elegir' : 'Espera al rival'}
+              </p>
+              <p className='game-status-detail'>
+                {hasRevealedCard
+                  ? `${remainingSeconds ?? '--'} segundos para responder`
+                  : `${remainingSeconds ?? '--'} segundos para elegir · ${currentPlayer?.username || 'Jugador'} tiene el turno`}
+              </p>
+            </div>
+          </div>
         </section>
 
         <section className='game-table' aria-labelledby='cards-title'>
@@ -227,10 +259,10 @@ const Game = () => {
             <div className='game-table-count'><Sparkles size={15} /> 6 preparadas</div>
           </div>
 
-          <div className='game-card-grid'>
-            {game.cards.map((card: GameRoom['cards'][number]) => {
+            {!hasRevealedCard ? <div className='game-card-grid'>
+              {game.cards.filter((card) => card.selectedBy === null && card.answeredAt === null).map((card: GameRoom['cards'][number]) => {
               const isRevealed = card.id === game.currentGameQuestionId
-              const isUnavailable = !canSelectCard || card.selectedAt !== null || selectionPending
+                const isUnavailable = !canSelectCard || card.selectedBy !== null || card.answeredAt !== null || selectionPending
 
               return (
                 <button
@@ -262,14 +294,18 @@ const Game = () => {
                         <span>UP</span>
                       </span>
                       <span className='game-card-prompt'>
-                        {canSelectCard ? 'Toca para revelar' : card.selectedAt ? 'En mesa' : 'Boca abajo'}
+                        {canSelectCard ? 'Toca para revelar' : card.selectedBy || card.answeredAt ? 'En mesa' : 'Boca abajo'}
                       </span>
                     </span>
                   )}
                 </button>
               )
             })}
-          </div>
+          </div> : null}
+
+          {!hasRevealedCard && game.cards.every((card) => card.selectedBy !== null || card.answeredAt !== null) ? (
+            <p className='py-10 text-center text-sm text-gold'>Preparando el desempate...</p>
+          ) : null}
 
           {activeQuestion ? (
             <section className='game-answer-panel' aria-label='Opciones de respuesta'>
@@ -284,6 +320,7 @@ const Game = () => {
                   <Clock3 size={16} /> {remainingSeconds ?? '--'}s
                 </span>
               </div>
+              <p className='game-active-question'>{activeQuestion.question}</p>
               {canRespond ? (
                 <div className='game-answer-options'>
                   {activeQuestion.answers.map((answer: { id: string; answer: string }, index: number) => (
@@ -323,14 +360,6 @@ const Game = () => {
               ) : null}
             </section>
           ) : null}
-
-          <p className='game-table-footnote'>
-            {hasRevealedCard
-              ? 'La selección quedó sincronizada para ambos jugadores.'
-              : isMyTurn
-                ? 'Tu elección revelará la pregunta para los dos jugadores.'
-                : 'Las cartas permanecen ocultas mientras esperas el turno.'}
-          </p>
         </section>
 
         {!hasRevealedCard && latestAnswer ? (

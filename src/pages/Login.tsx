@@ -59,7 +59,7 @@ const Login = () => {
   }
 
   return (
-    <div className='flex min-h-screen items-center justify-center bg-midnight px-4'>
+    <div className='flex min-h-screen items-center justify-center bg-page px-4'>
       <AuthCard title='Inicia sesión' subtitle='Accede a tu perfil y a tus partidas.'>
         <LoginForm
           onSubmit={handleSubmit}

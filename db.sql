@@ -65,8 +65,6 @@ create table game_requests (
     constraint different_players
         check (sender_id <> receiver_id)
 );
-
-
 -- =========================================================
 -- GAMES
 -- =========================================================
@@ -250,6 +248,83 @@ where is_correct = true;
 -- POLITICAS DE SUPABASE
 -- =========================================================
 
+alter table public.profiles enable row level security;
+
+revoke update on table public.profiles from authenticated;
+grant update (username, avatar_url, updated_at) on table public.profiles to authenticated;
+revoke insert on table public.profiles from authenticated;
+grant insert (id, username, avatar_url) on table public.profiles to authenticated;
+
+drop policy if exists "Users can create their own profile" on public.profiles;
+create policy "Users can create their own profile"
+on public.profiles
+for insert
+to authenticated
+with check (auth.uid() = id);
+
+drop policy if exists "Authenticated users can view profiles" on public.profiles;
+create policy "Authenticated users can view profiles"
+on public.profiles
+for select
+to authenticated
+using (true);
+
+drop policy if exists "Users can update their own profile" on public.profiles;
+create policy "Users can update their own profile"
+on public.profiles
+for update
+to authenticated
+using (auth.uid() = id)
+with check (auth.uid() = id);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 5242880, array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public avatar image reads" on storage.objects;
+create policy "Public avatar image reads"
+on storage.objects
+for select
+to anon, authenticated
+using (bucket_id = 'avatars');
+
+drop policy if exists "Users upload their own avatars" on storage.objects;
+create policy "Users upload their own avatars"
+on storage.objects
+for insert
+to authenticated
+with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users update their own avatars" on storage.objects;
+create policy "Users update their own avatars"
+on storage.objects
+for update
+to authenticated
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users delete their own avatars" on storage.objects;
+create policy "Users delete their own avatars"
+on storage.objects
+for delete
+to authenticated
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
+
 create policy "Players can view their games"
 on games
 for select
@@ -415,6 +490,10 @@ begin
         raise exception 'La solicitud ya fue respondida.';
     end if;
 
+    if request_row.expires_at is not null and request_row.expires_at <= now() then
+        raise exception 'Este desafío ha expirado.';
+    end if;
+
     update public.game_requests
     set status = 'rechazado'
     where id = p_request_id;
@@ -482,7 +561,7 @@ begin
               select count(*)
               from public.answers as answer
               where answer.question_id = question.id
-          ) >= 2
+          ) >= 4
         order by random()
         limit 1;
 
@@ -503,6 +582,19 @@ begin
         raise exception 'La partida debe tener seis preguntas distintas para comenzar.';
     end if;
 
+    if exists (
+        select 1
+        from public.game_questions as assigned
+        where assigned.game_id = p_game_id
+          and (
+              select count(*)
+              from public.answers as answer
+              where answer.question_id = assigned.question_id
+          ) < 4
+    ) then
+        raise exception 'Cada pregunta de la partida debe tener cuatro opciones de respuesta.';
+    end if;
+
     if game_row.status = 'en espera' then
         initial_turn_id := case when random() < 0.5 then game_row.player_one_id else game_row.player_two_id end;
 
@@ -514,6 +606,21 @@ begin
     elsif game_row.current_turn_id is null
         or game_row.current_turn_id not in (game_row.player_one_id, game_row.player_two_id) then
         raise exception 'La partida activa no tiene un turno válido.';
+    end if;
+
+    if game_row.status = 'en espera' or game_row.current_game_question_id is null then
+        update public.game_questions as available_card
+        set selected_at = clock_timestamp()
+        where available_card.id = (
+            select candidate.id
+            from public.game_questions as candidate
+            where candidate.game_id = p_game_id
+              and candidate.selected_by is null
+              and candidate.answered_at is null
+              and candidate.selected_at is null
+            order by candidate.position
+            limit 1
+        );
     end if;
 end;
 $$;
@@ -533,6 +640,8 @@ as $$
 declare
     game_row public.games%rowtype;
     card_row public.game_questions%rowtype;
+    selection_marker_id uuid;
+    selection_started_at timestamptz;
 begin
     select *
     into game_row
@@ -560,6 +669,23 @@ begin
         raise exception 'Ya hay una pregunta revelada en la mesa.';
     end if;
 
+    select id, selected_at into selection_marker_id, selection_started_at
+    from public.game_questions
+    where game_id = p_game_id
+      and selected_by is null
+      and answered_at is null
+      and selected_at is not null
+    order by position
+    limit 1
+    for update;
+
+    if selection_marker_id is null then
+        raise exception 'No hay un tiempo de selección activo.';
+    end if;
+    if selection_started_at + interval '10 seconds' <= clock_timestamp() then
+        raise exception 'Se agotó el tiempo para seleccionar una carta.';
+    end if;
+
     select *
     into card_row
     from public.game_questions
@@ -571,13 +697,20 @@ begin
         raise exception 'La carta no pertenece a esta partida.';
     end if;
 
-    if card_row.selected_at is not null or card_row.selected_by is not null then
+    if card_row.selected_by is not null or card_row.answered_at is not null then
         raise exception 'Esta carta ya fue seleccionada.';
     end if;
 
     update public.game_questions
+    set selected_at = null
+    where game_id = p_game_id
+      and selected_by is null
+      and answered_at is null
+      and selected_at is not null;
+
+    update public.game_questions
     set selected_by = auth.uid(),
-        selected_at = now()
+        selected_at = clock_timestamp()
     where id = p_game_question_id;
 
     update public.games
@@ -585,6 +718,79 @@ begin
     where id = p_game_id;
 end;
 $$;
+
+create or replace function public.expire_game_selection(p_game_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+    game_row public.games%rowtype;
+    selection_marker_id uuid;
+    selection_started_at timestamptz;
+    next_turn_id uuid;
+begin
+    select * into game_row
+    from public.games
+    where id = p_game_id
+    for update;
+
+    if not found or auth.uid() is null
+       or auth.uid() not in (game_row.player_one_id, game_row.player_two_id) then
+        raise exception 'No tienes permiso para cambiar el turno de esta partida.';
+    end if;
+    if game_row.status <> 'activo' or game_row.current_game_question_id is not null then
+        raise exception 'La partida no está esperando una selección.';
+    end if;
+
+    select id, selected_at into selection_marker_id, selection_started_at
+    from public.game_questions
+    where game_id = p_game_id
+      and selected_by is null
+      and answered_at is null
+      and selected_at is not null
+    order by position
+    limit 1
+    for update;
+
+    if selection_marker_id is null then
+        raise exception 'No hay un turno de selección activo.';
+    end if;
+    if selection_started_at + interval '10 seconds' > clock_timestamp() then
+        raise exception 'El tiempo para seleccionar todavía no terminó.';
+    end if;
+
+    next_turn_id := case
+        when game_row.current_turn_id = game_row.player_one_id then game_row.player_two_id
+        else game_row.player_one_id
+    end;
+
+    update public.game_questions
+    set selected_at = null
+    where id = selection_marker_id;
+
+    update public.games
+    set current_turn_id = next_turn_id
+    where id = p_game_id;
+
+    update public.game_questions
+    set selected_at = clock_timestamp()
+    where id = (
+        select candidate.id
+        from public.game_questions as candidate
+        where candidate.game_id = p_game_id
+          and candidate.selected_by is null
+          and candidate.answered_at is null
+          and candidate.selected_at is null
+        order by candidate.position
+        limit 1
+    );
+end;
+$$;
+
+revoke all on function public.expire_game_selection(uuid) from public, anon;
+grant execute on function public.expire_game_selection(uuid) to authenticated;
 
 create or replace function public.get_selected_game_question(p_game_id uuid)
 returns table (
@@ -665,6 +871,7 @@ set search_path = public, pg_temp
 as $$
 declare
     game_row public.games%rowtype;
+    option_count integer;
 begin
     select * into game_row
     from public.games
@@ -679,14 +886,30 @@ begin
         raise exception 'No hay una pregunta activa.';
     end if;
 
-    return query
-    select options.id, options.answer
-    from public.game_questions as assigned
-    join public.answers as options on options.question_id = assigned.question_id
-    where assigned.id = game_row.current_game_question_id
-      and assigned.game_id = p_game_id
-      and assigned.selected_at is not null
-    order by random();
+        select count(*) into option_count
+        from public.game_questions as assigned
+        join public.answers as options on options.question_id = assigned.question_id
+        where assigned.id = game_row.current_game_question_id
+            and assigned.game_id = p_game_id
+            and assigned.selected_at is not null;
+
+        if option_count < 4 then
+                raise exception 'La pregunta activa no tiene cuatro opciones disponibles.';
+        end if;
+
+        return query
+        select options.id, options.answer
+        from public.game_questions as assigned
+        join lateral (
+                select source.id, source.answer
+                from public.answers as source
+                where source.question_id = assigned.question_id
+                order by source.is_correct desc, random()
+                limit 4
+        ) as options on true
+        where assigned.id = game_row.current_game_question_id
+            and assigned.game_id = p_game_id
+            and assigned.selected_at is not null;
 end;
 $$;
 
@@ -738,8 +961,6 @@ declare
     response_count integer;
     answer_one boolean;
     answer_two boolean;
-    time_one integer;
-    time_two integer;
     score_one integer;
     score_two integer;
     completed_count integer;
@@ -827,7 +1048,6 @@ begin
         ) then
             raise exception 'Ya respondiste esta oportunidad.';
         end if;
-
         insert into public.game_answers
             (game_id, game_question_id, player_id, answer_id, is_correct, response_time_ms, answered_at)
         values (
@@ -852,12 +1072,12 @@ begin
             return jsonb_build_object('timed_out', elapsed_ms >= time_limit_ms, 'resolved', false);
         end if;
 
-        select is_correct, response_time_ms into answer_one, time_one
+                select is_correct into answer_one
         from public.game_answers
         where game_id = p_game_id and game_question_id = p_game_question_id
           and player_id = game_row.player_one_id and answered_at >= card_row.selected_at
         order by answered_at desc limit 1;
-        select is_correct, response_time_ms into answer_two, time_two
+                select is_correct into answer_two
         from public.game_answers
         where game_id = p_game_id and game_question_id = p_game_question_id
           and player_id = game_row.player_two_id and answered_at >= card_row.selected_at
@@ -866,10 +1086,6 @@ begin
         if coalesce(answer_one, false) and not coalesce(answer_two, false) then
             winner_id := game_row.player_one_id;
         elsif coalesce(answer_two, false) and not coalesce(answer_one, false) then
-            winner_id := game_row.player_two_id;
-        elsif coalesce(answer_one, false) and coalesce(answer_two, false) and time_one < time_two then
-            winner_id := game_row.player_one_id;
-        elsif coalesce(answer_one, false) and coalesce(answer_two, false) and time_two < time_one then
             winner_id := game_row.player_two_id;
         end if;
 
@@ -881,7 +1097,7 @@ begin
         select question.id into next_question_id
         from public.questions as question
         where question.id <> card_row.question_id
-          and (select count(*) from public.answers as options where options.question_id = question.id) >= 2
+          and (select count(*) from public.answers as options where options.question_id = question.id) >= 4
           and not exists (
               select 1 from public.game_questions as assigned
               where assigned.game_id = p_game_id and assigned.question_id = question.id
@@ -935,7 +1151,7 @@ begin
 
         select question.id into next_question_id
         from public.questions as question
-        where (select count(*) from public.answers as options where options.question_id = question.id) >= 2
+        where (select count(*) from public.answers as options where options.question_id = question.id) >= 4
           and not exists (
               select 1 from public.game_questions as assigned
               where assigned.game_id = p_game_id and assigned.question_id = question.id
@@ -966,6 +1182,19 @@ begin
         current_turn_id = response_player_id
     where id = p_game_id;
 
+    update public.game_questions as next_marker
+    set selected_at = clock_timestamp()
+    where next_marker.id = (
+        select candidate.id
+        from public.game_questions as candidate
+        where candidate.game_id = p_game_id
+          and candidate.selected_by is null
+          and candidate.answered_at is null
+          and candidate.selected_at is null
+        order by candidate.position
+        limit 1
+    );
+
     return jsonb_build_object(
         'resolved', true,
         'is_correct', coalesce(answer_is_correct, false),
@@ -974,6 +1203,64 @@ begin
     );
 end;
 $$;
+
+create or replace function public.set_game_request_expiration()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+    new.expires_at := now() + interval '30 seconds';
+    return new;
+end;
+$$;
+
+drop trigger if exists set_game_request_expiration on public.game_requests;
+create trigger set_game_request_expiration
+before insert on public.game_requests
+for each row
+execute function public.set_game_request_expiration();
+
+update public.game_requests
+set expires_at = created_at + interval '30 seconds'
+where status = 'pendiente';
+
+create or replace function public.delete_expired_game_requests()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+    delete from public.game_requests
+    where status = 'pendiente'
+      and expires_at <= now()
+      and auth.uid() in (sender_id, receiver_id);
+end;
+$$;
+
+revoke all on function public.delete_expired_game_requests() from public, anon;
+grant execute on function public.delete_expired_game_requests() to authenticated;
+
+revoke all on function public.reject_game_request(uuid) from public, anon;
+grant execute on function public.reject_game_request(uuid) to authenticated;
+
+create or replace function public.delete_expired_game_requests()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+        delete from public.game_requests
+        where status = 'pendiente'
+            and expires_at <= now()
+            and auth.uid() in (sender_id, receiver_id);
+end;
+$$;
+
+revoke all on function public.delete_expired_game_requests() from public, anon;
+grant execute on function public.delete_expired_game_requests() to authenticated;
 
 revoke all on function public.get_active_game_answers(uuid) from public, anon;
 revoke all on function public.finalize_game_internal(uuid, uuid) from public, anon, authenticated;
@@ -985,3 +1272,4 @@ alter table public.games enable row level security;
 alter table public.game_questions enable row level security;
 alter table public.game_answers enable row level security;
 alter table public.answers enable row level security;
+alter table public.questions enable row level security;

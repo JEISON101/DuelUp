@@ -97,6 +97,26 @@
   font-size: 0.72rem;
 }
 
+.game-player-score {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-player-correct,
+.game-player-incorrect {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  font-weight: 700;
+}
+
+.game-player-correct { color: #58e0aa; }
+.game-player-incorrect { color: #ff8585; }
+
 .game-turn-dot {
   width: 8px;
   height: 8px;
@@ -368,6 +388,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.game-active-question {
+  margin-top: 1rem;
+  color: #f1f5f9;
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.55;
 }
 
 .game-countdown {

@@ -296,3 +296,246 @@ from q, (values
     ('1453', false),
     ('1810', false)
 ) as a(answer, is_correct);
+
+-- =========================================================
+-- LECTURA (4)
+-- =========================================================
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué significa la palabra "efímero"?', 'lectura')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Que dura muy poco tiempo',  true),
+    ('Que dura para siempre',     false),
+    ('Que es muy antiguo',        false),
+    ('Que es muy grande',         false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('Lee: "Marta miraba el reloj cada minuto, movía la pierna sin parar y se mordía las uñas mientras esperaba los resultados." ¿Cómo se sentía Marta?', 'lectura')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Ansiosa',    true),
+    ('Aburrida',   false),
+    ('Tranquila',  false),
+    ('Orgullosa',  false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué figura literaria aparece en la frase "El viento susurraba secretos entre los árboles"?', 'lectura')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Personificación', true),
+    ('Hipérbole',       false),
+    ('Comparación',     false),
+    ('Onomatopeya',     false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué tipo de texto es una receta de cocina?', 'lectura')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Instructivo',    true),
+    ('Narrativo',      false),
+    ('Argumentativo',  false),
+    ('Poético',        false)
+) as a(answer, is_correct);
+
+
+-- =========================================================
+-- MATEMÁTICAS (4)
+-- =========================================================
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Cuál es el área de un triángulo con base de 10 cm y altura de 6 cm?', 'matematicas')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('30 cm²', true),
+    ('60 cm²', false),
+    ('16 cm²', false),
+    ('20 cm²', false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Cuánto es 2/3 + 1/6?', 'matematicas')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('5/6', true),
+    ('3/9', false),
+    ('3/6', false),
+    ('1/2', false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Cuál es el mínimo común múltiplo (m.c.m.) de 4 y 6?', 'matematicas')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('12', true),
+    ('24', false),
+    ('10', false),
+    ('2',  false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('Una camisa cuesta $80.000 y tiene 15% de descuento. ¿Cuánto se paga por ella?', 'matematicas')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('$68.000', true),
+    ('$65.000', false),
+    ('$72.000', false),
+    ('$70.000', false)
+) as a(answer, is_correct);
+
+
+-- =========================================================
+-- INGLÉS (4)
+-- =========================================================
+
+with q as (
+    insert into questions (question, category)
+    values ('Complete the sentence: "There ___ three books on the table."', 'ingles')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('are', true),
+    ('is',  false),
+    ('am',  false),
+    ('be',  false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué significa "I''m looking forward to the weekend"?', 'ingles')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Tengo muchas ganas de que llegue el fin de semana', true),
+    ('Estoy mirando hacia el fin de semana',              false),
+    ('Voy a trabajar el fin de semana',                   false),
+    ('No me gusta el fin de semana',                      false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Cuál es el opuesto (antonym) de "difficult"?', 'ingles')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Easy',  true),
+    ('Hard',  false),
+    ('Heavy', false),
+    ('Slow',  false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('Complete the sentence: "My brother is ___ than me."', 'ingles')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('taller',    true),
+    ('tall',      false),
+    ('tallest',   false),
+    ('more tall', false)
+) as a(answer, is_correct);
+
+
+-- =========================================================
+-- CULTURA GENERAL (4)
+-- =========================================================
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué gas absorben las plantas del aire para hacer la fotosíntesis?', 'cultura general')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Dióxido de carbono', true),
+    ('Oxígeno',            false),
+    ('Nitrógeno',          false),
+    ('Hidrógeno',          false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué continente tiene más países?', 'cultura general')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('África',  true),
+    ('Asia',    false),
+    ('Europa',  false),
+    ('América', false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿En qué año ocurrió la Batalla de Boyacá?', 'cultura general')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('1819', true),
+    ('1810', false),
+    ('1830', false),
+    ('1821', false)
+) as a(answer, is_correct);
+
+with q as (
+    insert into questions (question, category)
+    values ('¿Qué elemento químico tiene el símbolo "Au"?', 'cultura general')
+    returning id
+)
+insert into answers (question_id, answer, is_correct)
+select q.id, a.answer, a.is_correct
+from q, (values
+    ('Oro',      true),
+    ('Plata',    false),
+    ('Aluminio', false),
+    ('Argón',    false)
+) as a(answer, is_correct);

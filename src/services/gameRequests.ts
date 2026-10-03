@@ -13,7 +13,17 @@ export type GameRequest = {
   receiver: { username: string | null; avatar_url: string | null } | null
 }
 
+async function deleteExpiredGameRequests() {
+  const { error } = await supabase.rpc('delete_expired_game_requests')
+
+  if (error) {
+    throw error
+  }
+}
+
 export async function getGameRequests(userId: string) {
+  await deleteExpiredGameRequests()
+
   const { data, error } = await supabase
     .from('game_requests')
     .select(`
@@ -34,18 +44,15 @@ export async function getGameRequests(userId: string) {
     throw error
   }
 
-  const currentTime = Date.now()
-  return (data as unknown as GameRequest[]).map((request) =>
-    request.status === 'pendiente' && request.expires_at && Date.parse(request.expires_at) <= currentTime
-      ? { ...request, status: 'expirado' as const }
-      : request,
-  )
+  return data as unknown as GameRequest[]
 }
 
 export async function createGameRequest(senderId: string, receiverId: string) {
   if (senderId === receiverId) {
     throw new Error('No puedes desafiarte a ti mismo.')
   }
+
+  await deleteExpiredGameRequests()
 
   const { data: existingRequests, error: lookupError } = await supabase
     .from('game_requests')
@@ -68,7 +75,6 @@ export async function createGameRequest(senderId: string, receiverId: string) {
     .insert({
       sender_id: senderId,
       receiver_id: receiverId,
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     })
     .select('id')
     .single()

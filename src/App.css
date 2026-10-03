@@ -22,3 +22,9 @@
   --color-white-subtle: rgba(241, 245, 249, 0.35);
 }
 
+.bg-page {
+  background:
+    radial-gradient(ellipse at 10% 0%, rgba(39, 116, 239, 0.13), transparent 30rem),
+    radial-gradient(ellipse at 96% 60%, rgba(125, 77, 236, 0.1), transparent 28rem),
+    #080d1a;
+}

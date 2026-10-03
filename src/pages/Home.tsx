@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight,
   Gamepad,
   LogOut,
   Swords,
@@ -19,11 +18,13 @@ import { signOut } from "../services/auth";
 import { getTopProfiles } from "../services/profile";
 import { findGameForRequest } from "../services/gameRequests";
 import SpriteAnimation from "../components/ui/SpriteAnimation";
+import { Footer } from "../components/ui/Footer";
 
 const Home = () => {
   const navigate = useNavigate();
   const { user, profile, onlinePlayers } = useAuth();
   const challenges = useGameChallenges(user?.id);
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const previousRequestStatuses = useRef(new Map<string, string>());
   const handledAcceptedRequests = useRef(new Set<string>());
   const hasLoadedRequests = useRef(false);
@@ -32,6 +33,11 @@ const Home = () => {
     queryFn: getTopProfiles,
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!user?.id || challenges.isLoading) return;
@@ -118,7 +124,7 @@ const Home = () => {
   );
 
   return (
-    <div className="min-h-screen bg-midnight px-4 py-8 text-white">
+    <div className="min-h-screen px-4 py-7 text-white">
       <div className="mx-auto max-w-4xl space-y-6">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -177,7 +183,24 @@ const Home = () => {
         </header>
 
         <section className="grid overflow-hidden rounded-2xl border border-white/10 bg-transparent lg:min-h-[410px] lg:grid-cols-[1fr_1fr]">
-          <div className="p-6 space-y-3">
+          <div>
+            <div className="flex flex-col justify-center p-6 sm:p-9">
+              <h2 className="max-w-xl text-3xl font-bold leading-tight sm:text-4xl">
+                <span className="text-purple">Gana cada duelo y </span>
+                Aprende algo nuevo.
+              </h2>
+
+            <div className="flex items-center justify-center">
+              <SpriteAnimation />
+            </div>
+              <p className="mt-5 max-w-xl text-sm leading-6 text-white-muted sm:text-base">
+                Diviértete mientras aprendes: reta a otros jugadores, pon a
+                prueba lo que sabes y suma experiencia en cada partida.
+              </p>
+            </div>
+          </div>  
+
+                    <div className="p-6 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 font-semibold text-white">
                 <Users size={18} className="text-blue" />
@@ -203,7 +226,7 @@ const Home = () => {
                     return (
                       <article
                         key={player.userId}
-                        className="flex items-center gap-3 rounded-xl border border-white/10 bg-midnight/70 p-3"
+                        className="flex items-center gap-3 rounded-xl border border-white/10 bg-page/70 p-3"
                       >
                         {player.avatarUrl ? (
                           <img
@@ -259,24 +282,7 @@ const Home = () => {
                 aparecerá aquí.
               </p>
             )}
-          </div>
-          <div>
-            <div className="flex flex-col justify-center p-6 sm:p-9">
-              <h2 className="max-w-xl text-3xl font-bold leading-tight sm:text-4xl">
-                <span className="text-purple">Gana cada duelo y </span>
-                Aprende algo nuevo.
-              </h2>
-
-            <div className="flex items-center justify-center">
-              <SpriteAnimation />
-            </div>
-              <p className="mt-5 max-w-xl text-sm leading-6 text-white-muted sm:text-base">
-                Diviértete mientras aprendes: reta a otros jugadores, pon a
-                prueba lo que sabes y suma experiencia en cada partida.
-              </p>
-            </div>
-
-          </div>       
+          </div>     
         </section>
 
         <section className="space-y-3" aria-labelledby="challenges-title">
@@ -320,6 +326,14 @@ const Home = () => {
                 const playerName = otherPlayer?.username || "Jugador";
                 const isProcessing =
                   challenges.processingRequestId === request.id;
+                const expiresAt = request.expires_at
+                  ? Date.parse(request.expires_at)
+                  : Date.parse(request.created_at) + 30_000;
+                const secondsLeft = Math.max(
+                  0,
+                  Math.ceil((expiresAt - currentTime) / 1000),
+                );
+                const isExpired = secondsLeft === 0;
 
                 return (
                   <article
@@ -347,14 +361,17 @@ const Home = () => {
                         {new Date(request.created_at).toLocaleString()}
                       </p>
                     </div>
-                    <span className="text-xs font-semibold text-gold">
-                      Pendiente
+                    <span className={`text-xs font-semibold ${isExpired ? "text-white-muted" : "text-gold"}`}>
+                      {isExpired
+                        ? "Expirada"
+                        : `Exprira en 00:${String(secondsLeft).padStart(2, "0")}`}
                     </span>
                     {isIncoming ? (
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           isLoading={isProcessing}
+                          disabled={isExpired}
                           onClick={() =>
                             void handleRequest(request.id, "accept")
                           }
@@ -364,7 +381,7 @@ const Home = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={isProcessing}
+                          disabled={isProcessing || isExpired}
                           onClick={() =>
                             void handleRequest(request.id, "reject")
                           }
@@ -467,21 +484,8 @@ const Home = () => {
           )}
         </section>
 
-        <section className="flex flex-col justify-between gap-4 border-t border-white/10 py-5 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="font-semibold">¿Cómo se juega?</h2>
-            <p className="mt-1 text-sm text-white-muted">
-              Elige una partida, responde preguntas y reta tus conocimientos
-              ronda a ronda.
-            </p>
-          </div>
-          <Button
-            onClick={() => navigate("/app/games")}
-            rightIcon={<ArrowRight size={16} />}
-          >
-            Explorar partidas
-          </Button>
-        </section>
+        <Footer/>
+        
       </div>
     </div>
   );

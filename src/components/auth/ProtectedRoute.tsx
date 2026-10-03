@@ -9,7 +9,7 @@ export function ProtectedRoute() {
 
   if (loading) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-midnight text-white'>
+      <div className='flex min-h-screen items-center justify-center bg-page text-white'>
         <Spinner size='lg' label='Comprobando sesión...' />
       </div>
     )
